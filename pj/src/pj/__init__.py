@@ -442,7 +442,8 @@ def show(
         if comments:
             print("Comments:")
             for comment in issue.fields.comment.comments:
-                print(f"{comment.author.displayName} [{comment.created}]: {comment.body}")
+                text = comment.body.replace("\n", "\n  ")
+                print(f"{comment.author.displayName} [{comment.created}]: {text}")
         jql = f"'Parent Link' = {issue.key}"
         for sub_issue in ctx.search_issues_paginated(jql):
             ctx.print_issue(sub_issue)
