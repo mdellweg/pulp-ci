@@ -99,7 +99,6 @@ class Cache(BaseModel):
 
 
 def read_config(conf_path: Path) -> Config:
-    conf_path = Path(click.get_app_dir("pulp/pj")) / ".pj_config"
     data = tomllib.loads(conf_path.read_text())["default"]
     return Config(**data)
 
@@ -146,6 +145,7 @@ class JiraContext:
             self._cache.issue_types = [it.raw for it in result]
             self._cache_dirty = True
         else:
+            assert self.jira._session is not None
             result = [IssueType({}, self.jira._session, raw=it) for it in self._cache.issue_types]
         return result
 
@@ -156,6 +156,7 @@ class JiraContext:
             self._cache.resolutions = [res.raw for res in result]
             self._cache_dirty = True
         else:
+            assert self.jira._session is not None
             result = [
                 Resolution({}, self.jira._session, raw=res) for res in self._cache.resolutions
             ]
@@ -220,7 +221,7 @@ class JiraContext:
     def status_emoji(self, status: Status) -> str:
         return STATUS_EMOJIS.get(status.id, "❓")
 
-    def resolution_emoji(self, resolution: str) -> str:
+    def resolution_emoji(self, resolution: Resolution) -> str:
         return RESOLUTION_EMOJIS.get(resolution.id, "❓")
 
     def print_issue(self, issue: Issue) -> None:
@@ -237,7 +238,7 @@ class JiraContext:
             status += "🚩"
 
         priority: str = self.priority_emoji(issue.fields.priority)
-        storypoints: float = issue.get_field(FIELD_IDS["Story Points"])
+        storypoints: float | None = issue.get_field(FIELD_IDS["Story Points"])
         sp: str = f"{storypoints:.1f}" if storypoints is not None else "N/A"
         summary: str = issue.fields.summary
         print(
@@ -287,6 +288,12 @@ class JiraContext:
 pass_jira_context = click.make_pass_decorator(JiraContext)
 
 
+def resolution_callback(ctx: click.Context, _option: click.Option, value: str) -> Resolution:
+    jira_ctx = ctx.find_object(JiraContext)
+    assert jira_ctx is not None
+    return next((res for res in jira_ctx.resolutions if res.name == value))
+
+
 @click.group()
 @click.option("--clear-cache/--no-clear-cache", default=False)
 @click.pass_context
@@ -300,9 +307,8 @@ def main(ctx: click.Context, /, clear_cache: bool) -> None:
 @click.option("--future", "sprint_states", flag_value="future", multiple=True)
 @click.option("--active", "sprint_states", flag_value="active", multiple=True)
 @click.option("--closed", "sprint_states", flag_value="closed", multiple=True)
-@click.option("--my/--unassigned", default=None, help="defaults to all")
 @pass_jira_context
-def sprints(ctx: JiraContext, /, sprint_states: list[str] | None, my: bool | None) -> None:
+def sprints(ctx: JiraContext, /, sprint_states: list[str] | None) -> None:
     filters = {}
     if sprint_states is not None:
         filters["state"] = ",".join(sprint_states)
@@ -394,10 +400,10 @@ def my_next_issue() -> None:
     """
     Use special intelligent logic to spit out the next issue you should work on.
     """
-    click.echo("Starting up JirAI", nl=False)
+    click.echo("Starting up JirAI: ", nl=False)
     for i in range(5):
-        time.sleep(1)
         click.echo(".", nl=False)
+        time.sleep(i)
     click.echo("!")
     click.echo("Just kidding!")
     time.sleep(2)
@@ -746,7 +752,7 @@ def in_progress(
 
 
 @main.command()
-@click.option("--done", "resolution", flag_value="Done", default=True)
+@click.option("--done", "resolution", flag_value="Done", default=True, callback=resolution_callback)
 @click.option("--duplicate", "resolution", flag_value="Duplicate")
 @click.option("--cannot-reproduce", "resolution", flag_value="Cannot Reproduce")
 @click.option("--will-not-do", "resolution", flag_value="Won't Do")
@@ -755,14 +761,13 @@ def in_progress(
 def resolve(
     ctx: JiraContext,
     /,
-    resolution: str,
+    resolution: Resolution,
     issue_id: str,
 ) -> None:
     """
     Close issue with a resolution.
     """
     issue = ctx.jira.issue(issue_id)
-    resolution = next((res for res in ctx.resolutions if res.name == resolution))
     transitions = ctx.jira.transitions(issue)
     close_id = next((t["id"] for t in transitions if t["name"] == "Closed"))
     ctx.print_issue(issue)
