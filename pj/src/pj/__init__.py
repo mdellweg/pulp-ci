@@ -13,7 +13,7 @@ from pathlib import Path
 import click
 import tomllib
 from jira import JIRA
-from jira.resources import Issue, IssueType, Priority, Resolution, Status
+from jira.resources import Issue, IssueType, Priority, Resolution, SecurityLevel, Status
 from jira.utils import remove_empty_attributes
 from pydantic import BaseModel
 from pydantic.dataclasses import dataclass
@@ -44,6 +44,7 @@ FIELD_IDS = {
     "Story Points": "customfield_10028",
     "Flagged": "customfield_10021",
     "Reporter": "reporter",
+    "Security": "security",
     "Sprint": "customfield_10020",
     "Component/s": "components",
     "Labels": "labels",
@@ -82,6 +83,15 @@ RESOLUTION_EMOJIS = {
     "10001": "🚮",  # Won't Do
     "10003": "☢️",  # Cannot Reproduce
     "10002": "♊",  # Duplicate
+}
+
+SECURITY_LEVEL_EMOJIS = {
+    "10034": "🤠",  # Red Hat Employee
+    "10035": "✋",  # Restricted
+    "10036": "🤓",  # Red Hat Engineering Authorized
+    "10037": "🏟️",  # Team
+    "10038": "🧱",  # Embargoed Security Issue 🤫
+    "10039": "🧝",  # Red Hat Partner
 }
 
 
@@ -224,6 +234,9 @@ class JiraContext:
     def resolution_emoji(self, resolution: Resolution) -> str:
         return RESOLUTION_EMOJIS.get(resolution.id, "❓")
 
+    def security_emoji(self, security_level: SecurityLevel) -> str:
+        return SECURITY_LEVEL_EMOJIS.get(security_level.id, "❓")
+
     def print_issue(self, issue: Issue) -> None:
         # TODO priority
         issuetype: str = self.issue_type_emoji(issue.fields.issuetype)
@@ -236,6 +249,8 @@ class JiraContext:
             status += "🚧"
         if issue.get_field(FIELD_IDS["Flagged"]):
             status += "🚩"
+        if issue.fields.security is not None:
+            status += self.security_emoji(issue.fields.security)
 
         priority: str = self.priority_emoji(issue.fields.priority)
         storypoints: float | None = issue.get_field(FIELD_IDS["Story Points"])
@@ -254,6 +269,7 @@ class JiraContext:
         print(issue.fields.description)
         for fieldname in [
             "Status",
+            "Security",
             "Blocked",
             "Flagged",
             "Assignee",
@@ -426,6 +442,7 @@ def search(
 
 
 @main.command()
+@click.option("--short", is_flag=True, default=False)
 @click.option("--raw", is_flag=True, default=False)
 @click.option("--comments", is_flag=True, default=False)
 @click.argument("issue_id")
@@ -433,12 +450,17 @@ def search(
 def show(
     ctx: JiraContext,
     /,
+    short: bool,
     raw: bool,
     comments: bool,
     issue_id: str,
 ) -> None:
     issue = ctx.jira.issue(issue_id)
-    if raw:
+    if short:
+        if raw:
+            raise click.UsageError("'--raw' and '--short' cannot be combined.")
+        ctx.print_issue(issue)
+    elif raw:
         raw_issue = issue.raw
         raw_issue["fields"] = remove_empty_attributes(raw_issue["fields"])
         raw_issue = remove_empty_attributes(raw_issue)
@@ -461,6 +483,12 @@ def show(
 @click.option("--story", "issuetype", flag_value="Story")
 @click.option("--vulnerability", "issuetype", flag_value="Vulnerability")
 @click.option("--epic", "issuetype", flag_value="Epic")
+@click.option("--employee", "security", flag_value="Red Hat Employee")
+@click.option("--restricted", "security", flag_value="Restricted")
+@click.option("--engineering", "security", flag_value="Red Hat Engineering Authorized")
+@click.option("--team", "security", flag_value="Team")
+@click.option("--embargoed", "security", flag_value="Embargoed Security Issue")
+@click.option("--partner", "security", flag_value="Red Hat Partner")
 @click.option(
     "--priority",
     type=click.Choice(["Undefined", "Minor", "Normal", "Major", "Critical", "Blocker"]),
@@ -476,6 +504,7 @@ def create(
     ctx: JiraContext,
     /,
     issuetype: str,
+    security: str | None,
     priority: str,
     assign: bool,
     parent: str | None,
@@ -490,6 +519,8 @@ def create(
         "summary": summary,
         "description": description,
     }
+    if security is not None:
+        fields["security"] = {"name": security}
     if priority is not None:
         fields["priority"] = {"name": priority}
     if assign:
@@ -517,6 +548,12 @@ def create(
 @click.option("--story", "issuetype", flag_value="Story")
 @click.option("--vulnerability", "issuetype", flag_value="Vulnerability")
 @click.option("--epic", "issuetype", flag_value="Epic")
+@click.option("--employee", "security", flag_value="Red Hat Employee")
+@click.option("--restricted", "security", flag_value="Restricted")
+@click.option("--engineering", "security", flag_value="Red Hat Engineering Authorized")
+@click.option("--team", "security", flag_value="Team")
+@click.option("--embargoed", "security", flag_value="Embargoed Security Issue")
+@click.option("--partner", "security", flag_value="Red Hat Partner")
 @click.option(
     "--priority",
     type=click.Choice(["Undefined", "Minor", "Normal", "Major", "Critical", "Blocker"]),
@@ -531,6 +568,7 @@ def amend(
     /,
     summary: str | None,
     issuetype: str | None,
+    security: str | None,
     priority: str | None,
     assign: bool | None,
     parent: str | None,
@@ -550,6 +588,9 @@ def amend(
     if issuetype is not None:
         print("Type:", issue.fields.issuetype, "->", issuetype)
         fields["issuetype"] = {"name": issuetype}
+    if security is not None:
+        print("Security: ", issue.fields.security, "->", security)
+        fields["security"] = {"name": security}
     if priority is not None:
         print("Priority:", issue.fields.priority, "->", priority)
         fields["priority"] = {"name": priority}
@@ -820,6 +861,19 @@ def priorities(ctx: JiraContext, /) -> None:
     """
     for prio in ctx.jira.priorities():
         print(f"{ctx.priority_emoji(prio)} {prio.name} (id={prio.id})")
+
+
+@debug.command()
+@pass_jira_context
+def security_levels(ctx: JiraContext, /) -> None:
+    """
+    Dump status.
+    """
+    for id in SECURITY_LEVEL_EMOJIS.keys():
+        security_level = ctx.jira.security_level(id)
+        print(
+            f"{ctx.security_emoji(security_level)} {security_level.name} (id={security_level.id})"
+        )
 
 
 @debug.command()
