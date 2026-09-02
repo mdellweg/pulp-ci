@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, validate_call
 
 class Vulnerability(BaseModel):
     id: str
-    aliases: list[str]
+    aliases: list[str] = []
 
     _source: str | None = None
 

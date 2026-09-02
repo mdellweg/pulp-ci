@@ -30,3 +30,6 @@ class TestOsvInfo:
 
     def test_vulnerability_is_annotated_with_source(self, osv_info_1: OsvInfo) -> None:
         assert osv_info_1.vulnerabilities[0]._source == "OSV"
+
+    def test_unknown_package(self) -> None:
+        assert OsvInfo("unknown", Version("1.2.3")).vulnerable is False

@@ -158,7 +158,7 @@ def mock_urlopen(url: str | Request) -> MockResponse:
         try:
             status, body = OSV_DEV_RESPONSES[(payload.package.name, payload.version)]
         except KeyError:
-            pytest.fail(f"Unexpected request for: {payload}")
+            status, body = 200, "{}"
     else:
         pytest.fail(f"Unexpected request: {url}")
     return MockResponse(status, body)

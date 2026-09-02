@@ -18,7 +18,7 @@ class OsvPayload(BaseModel):
 
 
 class OsvData(BaseModel):
-    vulns: list[Vulnerability]
+    vulns: list[Vulnerability] = []
 
     model_config = ConfigDict(extra="allow")
 
