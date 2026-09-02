@@ -27,3 +27,6 @@ class TestOsvInfo:
 
     def test_a_2_vulnerabilities_is_empty(self, osv_info_2: OsvInfo) -> None:
         assert len(osv_info_2.vulnerabilities) == 0
+
+    def test_vulnerability_is_annotated_with_source(self, osv_info_1: OsvInfo) -> None:
+        assert osv_info_1.vulnerabilities[0]._source == "OSV"

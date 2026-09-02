@@ -7,12 +7,8 @@ from packaging.version import Version
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 from pydantic_settings import CliPositionalArg
 
-
-class Vulnerability(BaseModel):
-    id: str
-    aliases: list[str]
-
-    model_config = ConfigDict(extra="allow")
+from pulp_sec.common import Vulnerability
+from pulp_sec.osv import OsvInfo
 
 
 class PackageData(BaseModel):
@@ -32,6 +28,7 @@ class ReleaseInfo:
     def __init__(self, name: str, version: Version):
         self._name = name
         self._version = version
+        self._osv_info = OsvInfo(name, version)
 
     @cached_property
     def release_info(self) -> ReleaseData:
@@ -39,11 +36,12 @@ class ReleaseInfo:
             f"https://pypi.org/pypi/{self._name}/{self._version}/json/"
         ) as response:
             data = response.read()
-        return ReleaseData.model_validate_json(data)
+        return ReleaseData.model_validate_json(data, context={"source": "PyPI"})
 
     @cached_property
     def vulnerabilities(self) -> list[Vulnerability]:
-        return self.release_info.vulnerabilities
+        # TODO consolidate these entries with their aliases.
+        return self.release_info.vulnerabilities + self._osv_info.vulnerabilities
 
     @cached_property
     def vulnerable(self) -> bool:

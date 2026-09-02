@@ -4,6 +4,8 @@ from functools import cached_property
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict
 
+from pulp_sec.common import Vulnerability
+
 
 class OsvPackage(BaseModel):
     name: str
@@ -15,15 +17,9 @@ class OsvPayload(BaseModel):
     version: str
 
 
-class Vulnerability(BaseModel):
-    id: str
-    aliases: list[str]
-
-    model_config = ConfigDict(extra="allow")
-
-
 class OsvData(BaseModel):
     vulns: list[Vulnerability]
+
     model_config = ConfigDict(extra="allow")
 
 
@@ -44,7 +40,7 @@ class OsvInfo:
         )
         with urllib.request.urlopen(request) as response:
             data = response.read()
-        return OsvData.model_validate_json(data)
+        return OsvData.model_validate_json(data, context={"source": "OSV"})
 
     @cached_property
     def vulnerabilities(self) -> list[Vulnerability]:

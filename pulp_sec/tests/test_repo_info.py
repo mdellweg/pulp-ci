@@ -44,4 +44,4 @@ class TestBranchInfo:
         dependency_info = branch_info.dependency_infos[0]
         assert dependency_info.target_version == Version("1.1")
         assert dependency_info.vulnerable
-        assert len(dependency_info.vulnerabilities) == 1
+        assert len(dependency_info.vulnerabilities) == 3

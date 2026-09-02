@@ -11,3 +11,4 @@ def test_pypi_info_releases() -> None:
     vulnerability = PackageInfo("a").releases[Version("1.0")].vulnerabilities[0]
     assert vulnerability.id == "pulpcv0000"
     assert vulnerability.aliases == ["cvpulp0001"]
+    assert vulnerability._source == "PyPI"
