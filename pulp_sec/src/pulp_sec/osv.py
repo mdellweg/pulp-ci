@@ -23,7 +23,7 @@ class OsvData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class OsvInfo:
+class ReleaseInfo:
     def __init__(self, name: str, version: Version) -> None:
         self._name = name
         self._version = version

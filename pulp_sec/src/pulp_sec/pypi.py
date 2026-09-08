@@ -1,3 +1,7 @@
+"""
+Module containing the PyPI specific data gathering classes.
+"""
+
 import typing as t
 from functools import cached_property
 from urllib import parse, request
@@ -8,7 +12,6 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict
 from pydantic_settings import CliPositionalArg
 
 from pulp_sec.common import Vulnerability
-from pulp_sec.osv import OsvInfo
 
 
 class PackageData(BaseModel):
@@ -22,30 +25,6 @@ class ReleaseData(BaseModel):
     vulnerabilities: list[Vulnerability]
 
     model_config = ConfigDict(extra="allow")
-
-
-class ReleaseInfo:
-    def __init__(self, name: str, version: Version):
-        self._name = name
-        self._version = version
-        self._osv_info = OsvInfo(name, version)
-
-    @cached_property
-    def release_info(self) -> ReleaseData:
-        with request.urlopen(
-            f"https://pypi.org/pypi/{self._name}/{self._version}/json/"
-        ) as response:
-            data = response.read()
-        return ReleaseData.model_validate_json(data, context={"source": "PyPI"})
-
-    @cached_property
-    def vulnerabilities(self) -> list[Vulnerability]:
-        # TODO consolidate these entries with their aliases.
-        return self.release_info.vulnerabilities + self._osv_info.vulnerabilities
-
-    @cached_property
-    def vulnerable(self) -> bool:
-        return len(self.vulnerabilities) > 0
 
 
 class PackageInfo:
@@ -65,6 +44,28 @@ class PackageInfo:
     @cached_property
     def releases(self) -> dict[Version, ReleaseInfo]:
         return {v: ReleaseInfo(self._name, v) for v in self.versions}
+
+
+class ReleaseInfo:
+    def __init__(self, name: str, version: Version):
+        self._name = name
+        self._version = version
+
+    @cached_property
+    def release_info(self) -> ReleaseData:
+        with request.urlopen(
+            f"https://pypi.org/pypi/{self._name}/{self._version}/json/"
+        ) as response:
+            data = response.read()
+        return ReleaseData.model_validate_json(data, context={"source": "PyPI"})
+
+    @cached_property
+    def vulnerabilities(self) -> list[Vulnerability]:
+        return self.release_info.vulnerabilities
+
+    @cached_property
+    def vulnerable(self) -> bool:
+        return len(self.vulnerabilities) > 0
 
 
 class PyPi(BaseModel):
