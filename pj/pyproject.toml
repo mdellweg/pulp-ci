@@ -10,10 +10,10 @@ authors = [
   {name = "Matthias Dellweg"}
 ]
 dependencies = [
-  "click>=8.3.1,<8.4.0",
-  "ipython>=9.9.0,<9.10.0",
+  "click>=8.3.1,<8.5.1",
+  "ipython>=9.9.0,<9.17.2",
   "jira>=3.10.5,<3.11.0",
-  "pydantic>=2.12.5,<2.13.0",
+  "pydantic>=2.12.5,<2.13.6",
 ]
 classifiers = [
   "Private :: Do Not Upload",
