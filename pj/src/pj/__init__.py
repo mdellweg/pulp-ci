@@ -31,25 +31,6 @@ class Config:
     )
 
 
-FIELD_IDS = {
-    "Assignee": "assignee",
-    "Status": "status",
-    "Parent": "parent",
-    "Parent Link": "customfield_10018",
-    "Epic Link": "customfield_10014",
-    "Epic Name": "customfield_10011",
-    "Resolution": "resolution",
-    "Priority": "priority",
-    "Blocked": "customfield_10517",
-    "Story Points": "customfield_10028",
-    "Flagged": "customfield_10021",
-    "Reporter": "reporter",
-    "Security": "security",
-    "Sprint": "customfield_10020",
-    "Component/s": "components",
-    "Labels": "labels",
-}
-
 ISSUE_TYPE_EMOJIS = {
     "10142": "💶",  # Feature
     "10000": "🎭",  # Epic
@@ -238,22 +219,21 @@ class JiraContext:
         return SECURITY_LEVEL_EMOJIS.get(security_level.id, "❓")
 
     def print_issue(self, issue: Issue) -> None:
-        # TODO priority
         issuetype: str = self.issue_type_emoji(issue.fields.issuetype)
         issue_key: str = issue.key
         status: str = self.status_emoji(issue.fields.status)
         if issue.fields.resolution is not None:
             status += self.resolution_emoji(issue.fields.resolution)
-        if str(issue.get_field(FIELD_IDS["Blocked"])) != "False":
+        if str(issue.get_field(self.field_ids["Blocked"])) != "False":
             # Don't ask...
             status += "🚧"
-        if issue.get_field(FIELD_IDS["Flagged"]):
+        if issue.get_field(self.field_ids["Flagged"]):
             status += "🚩"
         if issue.fields.security is not None:
             status += self.security_emoji(issue.fields.security)
 
         priority: str = self.priority_emoji(issue.fields.priority)
-        storypoints: float | None = issue.get_field(FIELD_IDS["Story Points"])
+        storypoints: float | None = issue.get_field(self.field_ids["Story Points"])
         sp: str = f"{storypoints:.1f}" if storypoints is not None else "N/A"
         summary: str = issue.fields.summary
         print(
@@ -263,13 +243,13 @@ class JiraContext:
     def print_issue_detail(self, issue: Issue) -> None:
         print(issue.fields.issuetype.name, issue)
         if issue.fields.issuetype.id == "10000":  # Epic
-            print("Epic:", issue.get_field(FIELD_IDS["Epic Name"]))
+            print("Epic:", issue.get_field(self.field_ids["Epic Name"]))
         print(issue.permalink())
         print(issue.fields.summary)
         print(issue.fields.description)
         for fieldname in [
             "Status",
-            "Security",
+            "Security Level",
             "Blocked",
             "Flagged",
             "Assignee",
@@ -279,10 +259,11 @@ class JiraContext:
             "Resolution",
             "Epic Link",
             "Sprint",
-            "Component/s",
+            "Components",
             "Labels",
+            "Attachment",
         ]:
-            value: t.Any = issue.get_field(FIELD_IDS[fieldname])
+            value: t.Any = issue.get_field(self.field_ids[fieldname])
             if isinstance(value, list):
                 value = [str(item) for item in value]
             print("  " + fieldname + ":", value)
@@ -293,7 +274,7 @@ class JiraContext:
         for issue in issues:
             results[issue.fields.status.name].append(issue)
             sp_accumulator[issue.fields.status.name] += (
-                issue.get_field(FIELD_IDS["Story Points"]) or 0.0
+                issue.get_field(self.field_ids["Story Points"]) or 0.0
             )
         for status, issues in results.items():
             print(f"## {status} ({sp_accumulator[status]})")
@@ -526,17 +507,17 @@ def create(
     if assign:
         fields["assignee"] = ctx.jira.myself()
     if story_points is not None:
-        fields[FIELD_IDS["Story Points"]] = story_points
+        fields[ctx.field_ids["Story Points"]] = story_points
     if issuetype == "Epic":
         if epic_name is None:
             raise click.UsageError("--epic-name is needed.")
-        fields[FIELD_IDS["Epic Name"]] = epic_name
+        fields[ctx.field_ids["Epic Name"]] = epic_name
     if parent is not None:
         if issuetype == "Epic":
             link_name = "Parent Link"
         else:
             link_name = "Epic Link"
-        fields[FIELD_IDS[link_name]] = ctx.search_epic(parent).key
+        fields[ctx.field_ids[link_name]] = ctx.search_epic(parent).key
     issue = ctx.jira.create_issue(fields)
     ctx.print_issue_detail(issue)
 
@@ -604,24 +585,24 @@ def amend(
         parent_key = ctx.search_epic(parent).key
         if issuetype or issue.fields.issuetype == "Epic":
             link_name = "Parent Link"
-            fields[FIELD_IDS[link_name]] = parent_key
+            fields[ctx.field_ids[link_name]] = parent_key
         else:
             link_name = "Epic Link"
             epic_link = parent_key
         print(
             f"{link_name}: ",
-            issue.get_field(FIELD_IDS[link_name]),
+            issue.get_field(ctx.field_ids[link_name]),
             "->",
             parent_key,
         )
     if story_points is not None:
         print(
             "Story Points:",
-            issue.get_field(FIELD_IDS["Story Points"]),
+            issue.get_field(ctx.field_ids["Story Points"]),
             "->",
             story_points,
         )
-        fields[FIELD_IDS["Story Points"]] = story_points
+        fields[ctx.field_ids["Story Points"]] = story_points
 
     click.confirm("Continue?", abort=True)
     if len(fields) > 0:
@@ -646,6 +627,20 @@ def comment(ctx: JiraContext, /, issue_id: str, comment: str) -> None:
 
 @main.command()
 @click.argument("issue_id")
+@click.argument("attachment", type=click.File("rb"))
+@pass_jira_context
+def attach(ctx: JiraContext, /, issue_id: str, attachment: t.IO) -> None:
+    """
+    Comment on an issue.
+    """
+    issue = ctx.jira.issue(issue_id)
+    ctx.print_issue(issue)
+    click.confirm("Continue?", abort=True)
+    ctx.jira.add_attachment(issue, attachment)
+
+
+@main.command()
+@click.argument("issue_id")
 @pass_jira_context
 def groom(
     ctx: JiraContext,
@@ -654,13 +649,15 @@ def groom(
 ) -> None:
     """
     Interactively groom an issue for sprint readiness.
+
+    NOT FUNCTIONAL (use amend).
     """
     issue = ctx.jira.issue(issue_id)
     fields: dict[str, t.Any] = {}
     ctx.print_issue(issue)
 
     for field_name in ["Story Points", "Priority"]:
-        field_id = FIELD_IDS[field_name]
+        field_id = ctx.field_ids[field_name]
         orig_value = issue.get_field(field_id)
         value = click.prompt(field_name, default=orig_value)
         if value != orig_value:
@@ -725,7 +722,7 @@ def flag(
     """
     issue = ctx.jira.issue(issue_id)
     # TODO
-    issue.update(fields={FIELD_IDS["Flagged"]: [{"set": [{"value": "Impediment"}]}]})
+    issue.update(fields={ctx.field_ids["Flagged"]: [{"set": [{"value": "Impediment"}]}]})
 
 
 @main.command()
@@ -743,7 +740,7 @@ def unflag(
     """
     issue = ctx.jira.issue(issue_id)
     # TODO
-    issue.update(fields={FIELD_IDS["Flagged"]: [{"set": None}]})
+    issue.update(fields={ctx.field_ids["Flagged"]: [{"set": None}]})
 
 
 @main.command()
@@ -763,12 +760,12 @@ def storypoint(
     ctx.print_issue(issue)
     print(
         "Story Points:",
-        issue.get_field(FIELD_IDS["Story Points"]),
+        issue.get_field(ctx.field_ids["Story Points"]),
         "->",
         story_points,
     )
     click.confirm("Continue?", abort=True)
-    issue.update(fields={FIELD_IDS["Story Points"]: story_points})
+    issue.update(fields={ctx.field_ids["Story Points"]: story_points})
 
 
 @main.command()
