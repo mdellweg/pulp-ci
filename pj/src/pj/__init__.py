@@ -27,7 +27,7 @@ class Config:
     project: str = "PULP"
     board: str = "Pulp Project Team Board"
     kanban_status: list[str] = dataclasses.field(
-        default_factory=lambda: ["New", "In Progress", "Closed"]
+        default_factory=lambda: ["New", "In Progress", "Review", "Closed"]
     )
 
 
@@ -47,6 +47,7 @@ STATUS_EMOJIS = {
     "10142": "✨",  # "New"
     "10143": "✂️",  # "Refinement"
     "3": "🧵",  # "In Progress"
+    "10145": "👮",  # "Review"
     "6": "🚪",  # "Closed"
 }
 
@@ -276,7 +277,8 @@ class JiraContext:
             sp_accumulator[issue.fields.status.name] += (
                 issue.get_field(self.field_ids["Story Points"]) or 0.0
             )
-        for status, issues in results.items():
+        for status in self._config.kanban_status:
+            issues = results[status]
             print(f"## {status} ({sp_accumulator[status]})")
             for issue in issues:
                 self.print_issue(issue)
@@ -785,7 +787,7 @@ def in_progress(
     # new_status = Status(ctx.jira.session, transition["to"])
     ctx.print_issue(issue)
     # click.confirm(f"Set to 'new_status.name' {ctx.status_emoji(new_status)}?", abort=True)
-    click.confirm(f"Transition '{transition['name']}'?", abort=True)
+    click.confirm(f"Transition to '{transition['name']}'?", abort=True)
     ctx.jira.transition_issue(issue, transition["id"])
 
 
