@@ -496,6 +496,9 @@ def create(
     summary: str,
     description: str,
 ) -> None:
+    """
+    Create a new issue.
+    """
     fields: dict[str, t.Any] = {
         "project": ctx.project,
         "issuetype": issuetype,
@@ -690,6 +693,9 @@ def assign(ctx: JiraContext, /, issue_id: str) -> None:
 @click.argument("issue_ids", nargs=-1, required=True)
 @pass_jira_context
 def add_to_sprint(ctx: JiraContext, /, issue_ids: tuple[str], sprint_state: str) -> None:
+    """
+    Add an issue to the current or next sprint.
+    """
     issues = [ctx.jira.issue(issue_id) for issue_id in issue_ids]
     sprints = ctx.jira.sprints(ctx.board.id, state=[sprint_state])
     for issue in issues:
@@ -770,6 +776,33 @@ def storypoint(
     issue.update(fields={ctx.field_ids["Story Points"]: story_points})
 
 
+def transition(ctx: JiraContext, /, issue_id: str, to_status: str) -> None:
+    issue = ctx.jira.issue(issue_id)
+    transitions = ctx.jira.transitions(issue)
+    transition = next((t for t in transitions if t["name"] == to_status))
+    assert ctx.jira._session is not None
+    new_status = Status({}, session=ctx.jira._session, raw=transition["to"])
+    ctx.print_issue(issue)
+    click.confirm(
+        f"Transition to '{transition['name']}' {ctx.status_emoji(new_status)}?", abort=True
+    )
+    ctx.jira.transition_issue(issue, transition["id"])
+
+
+@main.command()
+@click.argument("issue_id")
+@pass_jira_context
+def new(
+    ctx: JiraContext,
+    /,
+    issue_id: str,
+) -> None:
+    """
+    Transition issue to new.
+    """
+    transition(ctx, issue_id, "New")
+
+
 @main.command()
 @click.argument("issue_id")
 @pass_jira_context
@@ -781,14 +814,21 @@ def in_progress(
     """
     Transition issue to in progress.
     """
-    issue = ctx.jira.issue(issue_id)
-    transitions = ctx.jira.transitions(issue)
-    transition = next((t for t in transitions if t["name"] == "In Progress"))
-    # new_status = Status(ctx.jira.session, transition["to"])
-    ctx.print_issue(issue)
-    # click.confirm(f"Set to 'new_status.name' {ctx.status_emoji(new_status)}?", abort=True)
-    click.confirm(f"Transition to '{transition['name']}'?", abort=True)
-    ctx.jira.transition_issue(issue, transition["id"])
+    transition(ctx, issue_id, "In Progress")
+
+
+@main.command()
+@click.argument("issue_id")
+@pass_jira_context
+def review(
+    ctx: JiraContext,
+    /,
+    issue_id: str,
+) -> None:
+    """
+    Transition issue to review.
+    """
+    transition(ctx, issue_id, "Review")
 
 
 @main.command()
@@ -819,7 +859,9 @@ def resolve(
 
 @main.group()
 def debug() -> None:
-    pass
+    """
+    Commands helping te development of pj.
+    """
 
 
 @debug.command()
@@ -866,7 +908,7 @@ def priorities(ctx: JiraContext, /) -> None:
 @pass_jira_context
 def security_levels(ctx: JiraContext, /) -> None:
     """
-    Dump status.
+    Dump security levels.
     """
     for id in SECURITY_LEVEL_EMOJIS.keys():
         security_level = ctx.jira.security_level(id)
