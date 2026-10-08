@@ -725,12 +725,9 @@ def flag(
 ) -> None:
     """
     Flag issue with impediment.
-
-    NOT FUNCTIONAL
     """
     issue = ctx.jira.issue(issue_id)
-    # TODO
-    issue.update(fields={ctx.field_ids["Flagged"]: [{"set": [{"value": "Impediment"}]}]})
+    issue.update(fields={ctx.field_ids["Flagged"]: [{"value": "Impediment"}]})
 
 
 @main.command()
@@ -743,12 +740,9 @@ def unflag(
 ) -> None:
     """
     Unflag issue from impediment.
-
-    NOT FUNCTIONAL
     """
     issue = ctx.jira.issue(issue_id)
-    # TODO
-    issue.update(fields={ctx.field_ids["Flagged"]: [{"set": None}]})
+    issue.update(fields={ctx.field_ids["Flagged"]: []})
 
 
 @main.command()
